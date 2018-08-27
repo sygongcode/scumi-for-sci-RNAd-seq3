@@ -1,0 +1,206 @@
+10X: {
+    num_read: 2,
+
+    read1: {
+      CB1: [1, 16],
+      UMI: [17, 26]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+10X-polyT: {
+    num_read: 2,
+
+    read1: {
+      CB1: [1, 16],
+      UMI: [17, 26],
+      polyT: [27, 31]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+InDrop: {
+  num_read: 4,
+
+  read1: {
+    CB1: [1, 8]
+  },
+
+  read2: {
+    CB2: [1, 8],
+    CB2_value: ["CATAACTG", "GGAGGTAA"]
+  },
+
+  read3: {
+    cDNA: []
+  },
+
+  read4: {
+    CB3: [1, 8],
+    UMI: [9, 14]
+  }
+}
+
+
+InDrop-polyT: {
+  num_read: 4,
+
+  read1: {
+    CB1: [1, 8]
+  },
+
+  read2: {
+    CB2: [1, 8],
+    CB2_value: ["CATAACTG", "GGAGGTAA"]
+  },
+
+  read3: {
+    cDNA: []
+  },
+
+  read4: {
+    CB3: [1, 8],
+    UMI: [9, 14],
+    polyT: [15, 19]
+  }
+}
+
+
+Drop-seq: {
+    num_read: 2,
+
+    read1: {
+      CB1: [1, 12],
+      UMI: [13, 20]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+Drop-seq-polyT: {
+    num_read: 2,
+
+    read1: {
+      CB1: [1, 12],
+      UMI: [13, 20],
+      polyT: [21, 25]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+Seq-Well: {
+    num_read: 2,
+
+    read1: {
+      CB1: [1, 12],
+      UMI: [13, 20]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+Seq-Well-polyT: {
+    num_read: 2,
+
+    read1: {
+      CB1: [1, 12],
+      UMI: [13, 20],
+      polyT: [21, 25]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+CEL-Seq2: {
+    num_read: 2,
+
+    read1: {
+      UMI: [1, 6],
+      CB1: [7, 12]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+CEL-Seq2-polyT: {
+    num_read: 2,
+
+    read1: {
+      UMI: [1, 6],
+      CB1: [7, 12],
+      polyT: [13, 17]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+sci-RNA-seq: {
+    num_read: 2,
+
+    read1: {
+      UMI: [1, 8],
+      CB1: [9, 18]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+sci-RNA-seq-polyT: {
+    num_read: 2,
+
+    read1: {
+      UMI: [1, 8],
+      CB1: [9, 18],
+      polyT: [19, 23]
+    },
+
+    read2: {
+      cDNA: []
+    }
+}
+
+
+SPLiT-seq: {
+  num_read: 2,
+
+  read1: {
+    cDNA: []
+  },
+
+  read2: {
+    UMI: [1, 10],
+    CB3: [11, 18],
+    CB2: [49, 56],
+    CB1: [87, 94]
+  }
+}

@@ -1,0 +1,165 @@
+#!/usr/bin/env python
+
+# scumi
+# Author : Jiarui Ding <jiarui.ding@gmail.com>
+
+import argparse
+from scumi.run import merge_fastq, count_umi, tag_bam
+
+
+parser = argparse.ArgumentParser(prog='scumi')
+parser.add_argument('--version', action='version', version='0.1.0')
+
+
+# The common arguments
+analysis_parser = argparse.ArgumentParser(add_help=False)
+
+
+subparsers = parser.add_subparsers()
+fastq_parser = subparsers.add_parser('merge_fastq',
+                                     parents=[analysis_parser],
+                                     help='''Merging fastq reads by putting the cell barcodes and UMI sequences 
+                                     to the headers of the cDNA reads''')
+
+fastq_parser.add_argument('fastq',
+                          nargs='+',
+                          help='''The input fastq files''')
+
+fastq_parser.add_argument('--config',
+                          required=True,
+                          default=None,
+                          metavar='FILE',
+                          help='''The config file with default method entries (method argument)''')
+
+fastq_parser.add_argument('--method',
+                          required=True,
+                          type=str,
+                          help='''the library preparation protocol, e.g., can be one of 10X, 
+                          Drop-seq, InDrop, Seq-Well, CEL-seq2, sci-RNA-seq, SPLiT-seq, 
+                          you can add protocol to the configure file easily 
+                          by specifying the read structures.''')
+
+fastq_parser.add_argument('--fastq_out',
+                          required=False,
+                          type=str,
+                          action='store',
+                          metavar='FILE',
+                          help='''The output merged fastq file''')
+
+fastq_parser.add_argument('--cell_barcode_count',
+                          required=False,
+                          type=str,
+                          metavar='FILE',
+                          help='''An output file containing the # reads for each cell barcode''')
+
+fastq_parser.add_argument('--num_thread',
+                          required=False,
+                          default=1,
+                          type=int,
+                          action='store',
+                          help='''The number of threads to use''')
+
+fastq_parser.set_defaults(func=merge_fastq)
+
+
+# Annotating a bam file with gene tag
+annotate_parser = subparsers.add_parser('tag_bam',
+                                        parents=[analysis_parser],
+                                        help='''Annotating a bam file with gene tag''')
+
+annotate_parser.add_argument('bam',
+                             help='''The input bam file''')
+
+annotate_parser.add_argument('--gtf',
+                             required=True,
+                             help='''A GTF file''')
+
+annotate_parser.add_argument('--annotate_multi_mapping',
+                             required=False,
+                             action='store_true',
+                             help='''Whether to count multi-mapped reads''')
+
+annotate_parser.add_argument('--featureCounts',
+                             required=False,
+                             default='featureCounts',
+                             help='''The featureCounts program to use.''')
+
+annotate_parser.add_argument('--annotate_intron',
+                             required=False,
+                             action='store_true',
+                             help='''Whether to annotate introns''')
+
+annotate_parser.add_argument('--strand',
+                             required=False,
+                             type=int,
+                             default=1,
+                             help='''0 for un-stranded, 1 for stranded, and 2 for reversely stranded''')
+
+annotate_parser.add_argument('--num_thread',
+                             required=False,
+                             default=1,
+                             type=int,
+                             action='store',
+                             help='''The number of threads to use''')
+
+annotate_parser.set_defaults(func=tag_bam)
+
+
+# Counting the number of UMIs in a gene of a cell
+count_parser = subparsers.add_parser('count_umi',
+                                     parents=[analysis_parser],
+                                     help='''Count the number of reads/UMIs mapped to each gene''')
+
+count_parser.add_argument('cb',
+                          nargs='*',
+                          help='''The candidate cell barcode files''')
+
+count_parser.add_argument('--bam',
+                          required=True,
+                          help='''The input sam/bam file''')
+
+count_parser.add_argument('--molecular_info_h5',
+                          required=True,
+                          help='''Output the detailed molecular info''')
+
+count_parser.add_argument('--gtf',
+                          required=True,
+                          help='''A GTF file''')
+
+count_parser.add_argument('--cell_barcode_count',
+                          required=True,
+                          help='''a file containing the number of reads mapped to each cell barcode, 
+                          output from format_fastq''')
+
+count_parser.add_argument('--feature_tag',
+                          required=False,
+                          default='XT:Z',
+                          help='''The tag representing genes in the input bam file''')
+
+count_parser.add_argument('--depth_threshold',
+                          required=False,
+                          type=int,
+                          default=1,
+                          help='''Only considering UMIs that have at least depth_threshold reads support''')
+
+count_parser.add_argument('--expect_cell',
+                          required=False,
+                          type=int,
+                          default=3000,
+                          help='''The expected number of cells in the bam file''')
+
+count_parser.add_argument('--force_cell',
+                          required=False,
+                          action='store_true',
+                          help='''Force to return the number of cells set by expect_cell''')
+
+count_parser.add_argument('--cell_barcode_whitelist',
+                          required=False,
+                          default=None,
+                          help='''A file contains a whitelist of cell barcodes''')
+
+count_parser.set_defaults(func=count_umi)
+
+
+args = parser.parse_args()
+args.func(args)
