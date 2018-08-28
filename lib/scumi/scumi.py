@@ -971,7 +971,7 @@ def _transform_write_sparse_matrix(molecular_info, num_gene,
 
     query_filer = f'depth >= {depth_threshold}'
     if 'umi' == sum_type:
-        base_name = out_prefix + '_umi'
+        base_name = out_prefix + '_read'
         count_collapsed = molecular_info.groupby(
             ['cell', 'gene'])
         count_collapsed = count_collapsed['depth'].sum()
@@ -1002,10 +1002,10 @@ def _transform_write_sparse_matrix(molecular_info, num_gene,
     pd.Series(count_column_name).to_csv(base_name + '_barcode.tsv', index=False)
 
     if 'umi' == sum_type:
-        with open(base_name + '.umi', 'w+b') as out_handle:
+        with open(base_name + '.mtx', 'w+b') as out_handle:
             scipy.io.mmwrite(out_handle, count)
     else:
-        with open(base_name + '.transcript', 'w+b') as out_handle:
+        with open(base_name + '.mtx', 'w+b') as out_handle:
             scipy.io.mmwrite(out_handle, count)
 
     write_time = time.time() - write_time
@@ -1387,4 +1387,4 @@ def annotate_bam(bam, gtf, featureCounts='featureCounts',
 
     feature_count_time = time.time() - start_time
     print(f'Annotating features done successfully, '
-          f'taking {feature_count_time/3600.0:.3f} minutes')
+          f'taking {feature_count_time/60.0:.3f} minutes')

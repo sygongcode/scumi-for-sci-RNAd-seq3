@@ -23,6 +23,9 @@ Dependencies
 * A gene transfer format (GTF) file. We use one from [10x Genomics](https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest)
 * The [Subread package](http://subread.sourceforge.net/), version 1.6.2 or above
 
+scumi can be installed using `python setup.py install`. 
+We will simplify the installation using conda packaging.
+
 
 ## Running scumi
 
@@ -30,8 +33,11 @@ Here we used example data from sci-RNA-seq to show how to run scumi.
 The same pipeline can be used to analyze data from other protocols such 10x Chromium, Drop-seq, Seq-Well, CEL-Seq2, InDrop, and SPLiT-seq. 
 
 ```bash
-star_dir=/ahg/regevdata/users/jding/software/STAR-2.6.0b/bin/Linux_x86_64
-feature_count_dir=/ahg/regevdata/users/jding/software/subread-1.6.1-Linux-x86_64/bin
+# The scumi package has been pre-installed in the conda environment scumi
+source /ahg/regevdata/projects/sc_compare/software/miniconda3/bin/activate scumi
+
+star_dir=/ahg/regevdata/projects/sc_compare/software/STAR-2.6.1a/bin/Linux_x86_64/
+feature_count_dir=/ahg/regevdata/projects/sc_compare/software/subread-1.6.2-Linux-x86_64/bin/
 
 index_dir=/seq/regev_genome_portal/SOFTWARE/10X/refdata-cellranger-1.2.0/refdata-cellranger-GRCh38-1.2.0
 star_index=$index_dir/star
@@ -54,11 +60,11 @@ molecular_info_h5=$bam".featureCounts.count_feature.h5"
 
 # Step one: Extract cell barcodes and unified molecular identifiers (UMIs) and 
 # put them to the header of the cDNA read
-/ahg/regevdata/projects/sc_compare/software/miniconda3/bin/scumi  merge_fastq $fastq1 $fastq2 \
+scumi merge_fastq $fastq1 $fastq2 \
   --config /ahg/regevdata/projects/sc_compare/doc/config.yaml  \
   --method sci-RNA-seq-polyT  \
   --fastq_out  $fastq_out \
-  --num_threshold 4  \
+  --num_thread 4  \
   --cell_barcode_count $cell_barcode_count 
   
 
@@ -81,14 +87,14 @@ $star_dir/STAR \
 
 
 # Step three: Using featureCounts to annotate each alignment with a gene tag, XT:Z
-/ahg/regevdata/projects/sc_compare/software/miniconda3/bin/scumi tag_bam $bam \
+scumi tag_bam $bam \
   --gtf $gtf  \
   --featureCounts $feature_count_dir"/featureCounts" \
   --annotate_multi_mapping 
 
 
 # Step four: Counting the number of UMIs per gene per cell 
-/ahg/regevdata/projects/sc_compare/software/miniconda3/bin/scumi count_umi \
+scumi count_umi \
   --bam $bam".featureCounts.bam" \
   --molecular_info_h5  $molecular_info_h5 \
   --cell_barcode_count $cell_barcode_count  \
@@ -152,6 +158,8 @@ The `--depth_threshold` parameter is used to filter UMIs that have less than a g
 This feature is useful for some noisy data, e.g., the CEL-Seq2 data that could have barcode switch issues.
 The `--expect_cell` parameter specifies the expected number of cells in the input bam file,
 and the `--force_cell` parameter forces scumi to ouput the number of cells specified by `--expect_cell`. 
+If the set of cell barcode whitelists is known, scumi can only consider these cell barcodes by specifying `--cell_barcode_whitelist=$cell_barcode_whitelist`, 
+where `$cell_barcode_whitelist` is an one column text file with the whitelist of cell barcodes (without header).  
 
 
 For many scRNA-seq protocols (e.g., sci-RNA-seq, 10x chromium, InDrop, and CEL-Seq2), the cell barcodes are drawn from a pool of known candidate cell barcodes.  For example, for the sci-RNA-seq data, the RT-barcodes (cell barcode one) are drawn from 384 candidate cell barcodes. 
