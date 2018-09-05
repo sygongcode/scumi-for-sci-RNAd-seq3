@@ -33,7 +33,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def format_fastq(*fastq, config, method, fastq_out, cb_count, num_thread=4):
+def format_fastq(*fastq, config, method, fastq_out, cb_count, 
+                 num_thread=4, max_num_cell=1000000):
     """
     Merging fastq reads by putting the cell barcodes and UMI sequences
     to the headers of the cDNA reads
@@ -49,6 +50,8 @@ def format_fastq(*fastq, config, method, fastq_out, cb_count, num_thread=4):
     :param cb_count: an output file containing the # reads for each cell barcode
     :param num_thread: int
                      the number of cpu cores to use
+    :param max_num_cell: int
+                        the maximum number of cells
     """
 
     with open(config, 'r') as stream:
@@ -86,7 +89,6 @@ def format_fastq(*fastq, config, method, fastq_out, cb_count, num_thread=4):
         partial(np.zeros, shape=(read_template.ub_len[0] + 1), dtype=np.uint32))
 
     time_start = time.time()
-    max_num_cell = 500000
     for fastq_chunk in seq_chunk_obj:
         for chunk in pool.map(format_read, fastq_chunk):
             with gzip.open(chunk[0], 'rb') as f_in:
