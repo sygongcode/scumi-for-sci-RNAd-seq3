@@ -592,10 +592,11 @@ def count_feature(*cb, bam, molecular_info_h5, gtf, cb_count, feature_tag='XT:Z'
         molecular_info = molecular_info.loc[~molecular_info['cell'].isin(cb_remove), :]
 
     molecular_info = molecular_info.loc[molecular_info['depth'] >= 0.95, :]
-    molecular_info = molecular_info.reset_index(drop=True)
-
     molecular_info['depth'] = \
         np.floor(molecular_info['depth'].values + 0.5).astype('uint32')
+
+    molecular_info = molecular_info.sort_values(name[:3])
+    molecular_info = molecular_info.reset_index(drop=True)
 
     map_info = pd.Series(map_info)
     read_in_cell = pd.DataFrame.from_dict(read_in_cell, orient='index')
