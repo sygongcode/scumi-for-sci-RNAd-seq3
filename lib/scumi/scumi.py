@@ -66,15 +66,22 @@ def format_fastq(*fastq, config, method, fastq_out, cb_count,
                      f'from the number of fastq files {num_read} detected in the config file')
         sys.exit(-1)
 
-    read_regex_str = [_extract_input_read_template('read' + str(i), config_dict)
-                      for i in range(1, num_read+1)]
+    read_regex_str, barcode_filter, read_regex_str_qual = \
+        zip(*[_extract_input_read_template('read' + str(i), config_dict)
+              for i in range(1, num_read+1)])
+
+    barcode_filter_dict = dict()
+    for d in barcode_filter:
+        barcode_filter_dict.update(d)
+
     read_template = _infer_read_template(read_regex_str)
 
-    read_regex_list = [re.compile(z) for z in read_regex_str]
-    format_read = partial(_format_read, read_regex_list,
+    read_regex_list = [re.compile(z) for z in read_regex_str_qual]
+    format_read = partial(_format_read, read_regex_list=read_regex_list,
                           read_template=read_template.read_template,
                           cb_tag=read_template.cb_tag,
-                          ub_len=read_template.ub_len)
+                          ub_len=read_template.ub_len,
+                          barcode_filter_dict=barcode_filter_dict)
     fastq_out_file = write_fastq(fastq_out)
 
     pool = multiprocessing.Pool(num_thread)
@@ -130,18 +137,20 @@ def _extract_barcode_pos(barcode_dict, config):
     barcode_reg = []
     pos_all = []
 
+    barcode_filter = dict()
     for barcode_and_pos in barcode_dict:
         barcode, pos = barcode_and_pos
         pos_all.append(pos)
+
+        barcode_reg.append('(?P<' + barcode + '>.{' +
+                           str(pos[1] - pos[0] + 1) + '})')
         try:
             value = config[barcode + '_value']
-            value = '|'.join(value) + '){s<=1}'
-            barcode_reg.append('(?P<' + barcode + '>(' + value + ')')
+            barcode_filter.update({barcode: ErrorBarcodeHash(value, 1)})
         except KeyError:
-            barcode_reg.append('(?P<' + barcode + '>.{' +
-                               str(pos[1] - pos[0] + 1) + '})')
+            pass
 
-    return barcode_reg, pos_all
+    return barcode_reg, pos_all, barcode_filter
 
 
 def _extract_input_read_template(read, config):
@@ -149,6 +158,7 @@ def _extract_input_read_template(read, config):
     read_plus = '(\\+.*)\\n'
     read_qual = '(.*)\\n'
 
+    filter_dict = dict()
     seq = [(key, value) for key, value in config[read].items()
            if key.startswith('cDNA')]
     if seq:
@@ -156,7 +166,7 @@ def _extract_input_read_template(read, config):
         read_seq = '(?P<seq>.*)\\n'
         read_qual = '(?P<qual>.*)\\n'
         read_template = read_name + read_seq + read_plus + read_qual
-        return read_template
+        return read_template, filter_dict, read_template
 
     cell_barcode = [(key, value) for key, value in config[read].items()
                     if key.startswith('CB') and not key.endswith('value')]
@@ -167,12 +177,13 @@ def _extract_input_read_template(read, config):
     poly_t = [(key, value) for key, value in config[read].items()
               if key.startswith('polyT')]
 
-    cb_reg, cb_pos = _extract_barcode_pos(cell_barcode, config[read])
+    cb_reg, cb_pos, cb_filter = _extract_barcode_pos(cell_barcode, config[read])
+    filter_dict.update(cb_filter)
 
-    umi_reg, umi_pos = _extract_barcode_pos(umi, config[read])
+    umi_reg, umi_pos, _ = _extract_barcode_pos(umi, config[read])
     umi_reg = [z.replace('UMI', 'UB') for z in umi_reg]
 
-    pt_reg, pt_pos = _extract_barcode_pos(poly_t, config[read])
+    pt_reg, pt_pos, _ = _extract_barcode_pos(poly_t, config[read])
 
     read_pos_start = [z[0] for z in cb_pos]
     read_pos_start += [z[0] for z in umi_pos]
@@ -203,7 +214,7 @@ def _extract_input_read_template(read, config):
             read_seq += barcode_skip[i]
             read_seq += barcode_tag[i+1]
 
-    read_seq = _replace_poly_t(read_seq)
+    filter_dict.update(_filter_ploy_t(read_seq))
 
     if read_pos_start[0] > 1:
         read_seq = '[ACGTN]{' + str(read_pos_start[0]-1) + '}'
@@ -213,7 +224,20 @@ def _extract_input_read_template(read, config):
 
     read_template = read_name + read_seq + read_plus + read_qual
 
-    return read_template
+    read_qual = re.sub('>', r'_qual>', read_seq)
+    read_qual = re.sub('\[ACGTN\]', '.', read_qual)
+    read_template_qual = read_name + read_seq + read_plus + read_qual
+
+    return read_template, filter_dict, read_template_qual
+
+
+def _filter_ploy_t(read_seq):
+    match = re.findall('\?P<polyT>\.{[0-9]+}', read_seq)
+    poly_t_count = [int(re.findall(r'\d+', z)[0]) for z in match]
+
+    poly_t_filter = {'polyT': ErrorBarcodeHash('T' * z, 1) for z in poly_t_count}
+
+    return poly_t_filter
 
 
 def _replace_poly_t(read_seq):
@@ -293,18 +317,20 @@ def _accumulate_barcode(barcode, seq):
     return barcode_seq, barcode_template, barcode_len
 
 
-def _format_read(read_regex_list, chunk, read_template, cb_tag, ub_len):
+def _format_read(chunk, read_regex_list, read_template, cb_tag, ub_len,
+                 barcode_filter_dict):
     reads = []
-    num_read = len(chunk)
+    # num_read = len(chunk)
+    num_read_pass = num_read_barcode = num_read_polyt = 0
     num_regex = len(read_regex_list)
 
     barcode_counter = collections.defaultdict(
         partial(np.zeros, shape=(ub_len[0] + 1), dtype=np.uint32))
     ignore_read = False
-    for read_id in range(num_read):
+    for read_i in chunk:
         read_dict_list = []
-        for regex_id in range(num_regex):
-            read_match = read_regex_list[regex_id].match(chunk[read_id][regex_id])
+        for i, regex_i in enumerate(read_regex_list):
+            read_match = regex_i.match(read_i[i])
             if not read_match:
                 ignore_read = True
                 break
@@ -320,8 +346,29 @@ def _format_read(read_regex_list, chunk, read_template, cb_tag, ub_len):
             for regex_id in range(1, num_regex):
                 read1_dict.update(read_dict_list[regex_id])
 
-        cb = '-'.join([read1_dict[tag] for tag in cb_tag])
+        cb = [barcode_filter_dict[tag][read1_dict[tag]]
+              if tag in barcode_filter_dict.keys() else read1_dict[tag]
+              for tag in cb_tag]
+        if all(cb):
+            cb = '-'.join(cb)
+            num_read_barcode += 1
+        else:
+            ignore_read = True
+
         ub = read1_dict['UB']
+        try:
+            poly_t = read1_dict['polyT']
+            if not barcode_filter_dict['polyT'][poly_t]:
+                ignore_read = True
+            else:
+                num_read_polyt += 1
+        except KeyError:
+            pass
+
+        if ignore_read:
+            ignore_read = False
+            continue
+        num_read_pass += 1
 
         if len(read1_dict['seq']) >= 1:
             read1_dict = read_template.format_map(read1_dict)
