@@ -388,8 +388,7 @@ def _format_read(chunk, read_regex_list, read_template, cb_tag, ub_len,
 def _construct_barcode_regex(bam):
     read_mode = 'r' if bam.endswith('.sam') else 'rb'
     bam_file = AlignmentFile(bam, mode=read_mode)
-    element = bam_file.fetch(until_eof=True)
-    first_alignment = toolz.first(element)
+    first_alignment = next(bam_file)
     bam_file.close()
 
     barcodes = set()
@@ -832,28 +831,41 @@ def _generate_barcode_whitelist_map(barcode, whitelist, min_distance=1):
 
     whitelist = set([str(x).encode('utf-8') for x in whitelist])
 
-    for barcode_i in barcode:
-        match = None
-        barcode_in_bytes = str(barcode_i).encode('utf-8')
+    num_cpu = multiprocessing.cpu_count()
+    pool = multiprocessing.Pool(num_cpu)
 
-        for white_barcode in whitelist:
-            if barcode_in_bytes in whitelist:
-                match = barcode_i
-                break
+    _partial_map_single_barcode_to_whitelist = \
+        partial(_map_single_barcode_to_whitelist, whitelist=whitelist,
+                min_distance=min_distance)
 
-            if compute_edit_distance(barcode_in_bytes, white_barcode) <= min_distance:
-                if match is not None:
-                    logging.info(f'Warning: barcode {str(barcode_i)} can be '
-                                 f'mapped to more than one candidate barcodes')
-                    match = None
-                    break
-                else:
-                    match = white_barcode.decode('utf-8')
+    corrected_barcode = pool.map(_partial_map_single_barcode_to_whitelist, barcode)
 
-        if match is not None:
-            barcode_to_whitelist[barcode_i].add(match)
+    for idx, barcode_i in enumerate(corrected_barcode):
+        if barcode_i is not None:
+            barcode_to_whitelist[barcode[idx]].add(barcode_i)
 
     return barcode_to_whitelist
+
+
+def _map_single_barcode_to_whitelist(barcode, whitelist, min_distance=1):
+    match = None
+    barcode_in_bytes = str(barcode).encode('utf-8')
+
+    for white_barcode in whitelist:
+        if barcode_in_bytes in whitelist:
+            match = barcode
+            break
+
+        if compute_edit_distance(barcode_in_bytes, white_barcode) <= min_distance:
+            if match is not None:
+                logging.info(f'Warning: barcode {str(barcode)} can be '
+                             f'mapped to more than one candidate barcodes')
+                match = None
+                break
+            else:
+                match = white_barcode.decode('utf-8')
+
+    return match
 
 
 def _merge_del_barcode(barcode_dict, barcode_count, min_distance=1, merge_barcode=False):
@@ -1113,8 +1125,8 @@ def _collapse_barcode_edit(barcode, value, min_distance=1):
 
 
 def _collapse_umi(x, min_distance=1):
-    id_start = x.drop_duplicates(['cell', 'gene'])
-    id_start = id_start.index.tolist()
+    id_start = x.duplicated(['cell', 'gene'])
+    id_start = id_start[id_start == False].index.tolist()
 
     id_end = id_start[1:]
     id_end.append(x.shape[0])
@@ -1341,14 +1353,15 @@ def _filter_tag_fun(tag_file, max_distance, correct=True):
         tag_file = [None if x == 'None' else x for x in tag_file]
     else:
         tag_file = [None]
-    num_tag = len(tag_file)
 
-    tag_hash = tag_file
-    for i in range(num_tag):
-        if tag_file[i]:
-            with open(tag_file[i], 'r') as file_handle:
-                tag_seq = {line.rstrip('\n') for line in file_handle}
-            tag_hash[i] = ErrorBarcodeHash(tag_seq, max_distance)
+    tag_hash = [None] * len(tag_file)
+    for i, tag_file_i in enumerate(tag_file):
+        if not tag_file_i:
+            continue
+
+        with open(tag_file_i, 'r') as file_handle:
+            tag_seq = {line.rstrip('\n') for line in file_handle}
+        tag_hash[i] = ErrorBarcodeHash(tag_seq, max_distance)
 
     filter_tag_fun = partial(_filter_tag, tag_hash=tag_hash, correct=correct)
 
@@ -1356,14 +1369,15 @@ def _filter_tag_fun(tag_file, max_distance, correct=True):
 
 
 def _filter_tag(tag, tag_hash, correct=True):
-    num_tag = len(tag)
     tag_corrected = list(tag)
 
-    for i in range(num_tag):
-        if tag[i] and tag_hash[i]:
-            tag_corrected[i] = tag_hash[i][tag[i]]
-            if not tag_corrected[i]:
-                return None
+    for i, tag_i in enumerate(tag):
+        if not tag_hash[i]:
+            continue
+
+        tag_corrected[i] = tag_hash[i][tag_i]
+        if not tag_corrected[i]:
+            return None
 
     if correct:
         return '-'.join(tag_corrected)
@@ -1372,15 +1386,16 @@ def _filter_tag(tag, tag_hash, correct=True):
 
 
 def _filter_tag_multi(tag, tag_hash, correct=True):
-    num_tag = len(tag)
     tag_corrected = list(tag)
 
     tag_full = '-'.join(tag)
-    for i in range(num_tag):
-        if tag[i] and tag_hash[i]:
-            tag_corrected[i] = tag_hash[i][tag[i], tag_full]
-            if not tag_corrected[i]:
-                return None
+    for i, tag_i in enumerate(tag):
+        if not tag_hash[i]:
+            continue
+
+        tag_corrected[i] = tag_hash[i][tag_i, tag_full]
+        if not tag_corrected[i]:
+            return None
 
     if correct:
         return '-'.join(tag_corrected)
