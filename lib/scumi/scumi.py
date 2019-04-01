@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 
 import sys
+import os
 import numpy as np
 import scipy.io
-from io import BytesIO
 import scipy.sparse
 import numba
 import random
-import multiprocessing
+import multiprocessing as mp
+import subprocess
 import cytoolz as toolz
 import collections
 from itertools import chain
@@ -17,13 +18,12 @@ import logging
 import time
 import gzip
 import pandas as pd
-from shutil import copyfileobj
 from functools import partial
 from typing import NamedTuple
 from pysam import AlignmentFile
 
 from .util import compute_edit_distance, read_gene_map_from_gtf
-from .fastq_io import read_fastq, write_fastq
+from .fastq_io import read_fastq
 from .barcode import ErrorBarcodeHash, ErrorBarcodeHashConstraint
 from .estimate_cell_barcode import get_cell_whitelist
 
@@ -68,7 +68,7 @@ def format_fastq(*fastq, config, method, fastq_out, cb_count,
 
     read_regex_str, barcode_filter, read_regex_str_qual = \
         zip(*[_extract_input_read_template('read' + str(i), config_dict)
-              for i in range(1, num_read+1)])
+              for i in range(1, num_read + 1)])
 
     barcode_filter_dict = dict()
     for d in barcode_filter:
@@ -76,61 +76,129 @@ def format_fastq(*fastq, config, method, fastq_out, cb_count,
 
     read_template = _infer_read_template(read_regex_str)
 
+    # select
     read_regex_list = [re.compile(z) for z in read_regex_str_qual]
     format_read = partial(_format_read, read_regex_list=read_regex_list,
                           read_template=read_template.read_template,
                           cb_tag=read_template.cb_tag,
                           ub_len=read_template.ub_len,
                           barcode_filter_dict=barcode_filter_dict)
-    fastq_out_file = write_fastq(fastq_out)
 
-    pool = multiprocessing.Pool(num_thread)
-
-    chunk_size = 80000
-    iteration = 0
+    chunk_size = 8000
     fastq_reader = [read_fastq(fastq_i) for fastq_i in fastq]
     chunks = toolz.partition_all(chunk_size, zip(*fastq_reader))
+
+    num_cpu = mp.cpu_count()
+    num_thread = num_thread if num_cpu > num_thread else num_cpu
     seq_chunk_obj = toolz.partition_all(num_thread, chunks)
 
-    barcode_counter = collections.defaultdict(
-        partial(np.zeros, shape=(read_template.ub_len[0] + 1), dtype=np.uint32))
+    fastq_out_all = [fastq_out + str(x) + '.gz' for x in range(num_thread)]
+    [gzip.open(x, 'wb').close() for x in fastq_out_all]
+
+    cb_count_all = [cb_count + str(x) + '.csv' for x in range(num_thread)]
+    [open(x, 'wt').close() for x in cb_count_all]
+
+    fastq_info = collections.defaultdict(collections.Counter)
+    iteration = 0
+    results = []
 
     time_start = time.time()
+    pool = mp.Pool(num_thread)
     for fastq_chunk in seq_chunk_obj:
-        for chunk in pool.map(format_read, fastq_chunk):
-            with gzip.open(chunk[0], 'rb') as f_in:
-                copyfileobj(f_in, fastq_out_file)
+        res = pool.starmap_async(format_read, zip(fastq_chunk, fastq_out_all, cb_count_all))
+        results.append(res)
 
-            for k, v in chunk[1].items():
-                barcode_counter[k] += v
+        if len(results) == num_thread * 10:
+            results[0].wait()
 
-        if len(barcode_counter) > max_num_cell * 2:
-            barcode_counter = sorted(
-                barcode_counter.items(), key=lambda k_v: k_v[1][0],
-                reverse=True)[:max_num_cell]
+        while results and results[0].ready():
+            iteration += 1
+            if not (iteration % 10):
+                logger.info(f'Processed {iteration * chunk_size * num_thread:,d} reads!')
 
-            barcode_counter = collections.defaultdict(
-                partial(np.zeros, shape=(read_template.ub_len[0] + 1),
-                        dtype=np.uint32), barcode_counter)
+            res = results.pop(0)
+            chunk_info = res.get()
+            _update_fastq_info(fastq_info, chunk_info)
 
-        iteration += 1
-        logger.info(f'Processed {iteration * chunk_size * num_thread:,d} reads!')
+    pool.close()
+    pool.join()
+    for res in results:
+        chunk_info = res.get()
+        _update_fastq_info(fastq_info, chunk_info)
 
-    fastq_out_file.close()
+    with open('.fastq_count.tsv', 'w') as f:
+        for k, v in fastq_info['read'].most_common():
+            f.write(f'{k}\t{v}\n')
+
+    cmd_cat_fastq = ' '.join(['cat'] + fastq_out_all + ['>'] + [fastq_out])
+    try:
+        subprocess.check_output(cmd_cat_fastq, shell=True)
+        [os.remove(fastq_file) for fastq_file in fastq_out_all]
+    except subprocess.CalledProcessError:
+        logger.info(f'Errors in concatenate fastq files')
+        sys.exit(-1)
+    except OSError:
+        logger.info(f'Errors in deleting fastq files')
+        sys.exit(-1)
 
     time_used = time.time() - time_start
     logger.info(f'Formatting fastq done, taking {time_used/3600.0:.3f} hours')
     if not cb_count:
         cb_count = fastq_out + '.cb_count'
 
-    df = pd.DataFrame.from_dict(barcode_counter, orient='index')
-    df = df.sort_values(by=0, ascending=False)
-    df.index.name = 'cb'
-    column_name = list(df.columns.values)
-    column_name[0] = 'cb_count'
-    df.columns = column_name
+    df = _count_cell_barcode_umi(cb_count_all[0])
+    for cb_file in cb_count_all[1:]:
+        df1 = _count_cell_barcode_umi(cb_file)
+        df = pd.concat([df, df1], axis=0)
+        df = df.groupby(df.index).sum()
+        if df.shape[0] > max_num_cell * 2:
+            df = df.sort_values(by=df.columns[0], ascending=False)
+            df = df.iloc[:max_num_cell, :]
 
-    df.to_csv(cb_count, sep='\t')
+    try:
+        [os.remove(cb_file) for cb_file in cb_count_all]
+    except OSError:
+        logger.info(f'Errors in deleting cell barcode files')
+        sys.exit(-1)
+
+    df = df.sort_values(by=df.columns[0], ascending=False)
+
+    if df.shape[0] > 0:
+        df.columns = [str(x) for x in range(df.shape[1])]
+        df.index.name = 'cb'
+        column_name = list(df.columns.values)
+        column_name[0] = 'cb_count'
+        df.columns = column_name
+
+        df.to_csv(cb_count, sep='\t')
+
+
+def _update_fastq_info(fastq_info, chunk_info):
+    for fastq_count in chunk_info:
+        fastq_info['read'].update(read_pass=fastq_count[0],
+                                  read_pass_barcode=fastq_count[1],
+                                  read_pass_polyt=fastq_count[2],
+                                  read_total=fastq_count[3])
+
+
+def _count_cell_barcode_umi(cb_file, chunk_size=10 ** 7):
+    cb_reader = pd.read_csv(cb_file, header=None, iterator=True,
+                            sep='\t', index_col=0)
+
+    chunks = cb_reader.get_chunk(chunk_size)
+    chunks = chunks.groupby(chunks.index).sum()
+
+    status = True
+    while status:
+        try:
+            chunk = cb_reader.get_chunk(chunk_size)
+            chunks = pd.concat([chunks, chunk], axis=0)
+            chunks = chunks.groupby(chunks.index).sum()
+        except StopIteration:
+            status = False
+            logger.info('Read cell barcode counts done.')
+
+    return chunks
 
 
 def _extract_barcode_pos(barcode_dict, config):
@@ -317,10 +385,10 @@ def _accumulate_barcode(barcode, seq):
     return barcode_seq, barcode_template, barcode_len
 
 
-def _format_read(chunk, read_regex_list, read_template, cb_tag, ub_len,
-                 barcode_filter_dict):
+def _format_read(chunk, fastq_file, cb_count_file, read_regex_list,
+                 read_template, cb_tag, ub_len, barcode_filter_dict):
     reads = []
-    # num_read = len(chunk)
+    num_read = len(chunk)
     num_read_pass = num_read_barcode = num_read_polyt = 0
     num_regex = len(read_regex_list)
 
@@ -376,13 +444,21 @@ def _format_read(chunk, read_regex_list, read_template, cb_tag, ub_len,
 
         barcode_counter[cb] += [x == 'T' for x in 'T' + ub]
 
-    fgz = BytesIO()
-    with gzip.GzipFile(mode='wb', fileobj=fgz) as gzip_obj:
+    with gzip.open(fastq_file, 'ab') as fastq_hd:
         for read in reads:
-            gzip_obj.write(bytes(read, 'utf8'))
-    fgz.seek(0)
+            fastq_hd.write(bytes(read, 'utf8'))
 
-    return fgz, barcode_counter
+    df = pd.DataFrame.from_dict(barcode_counter, orient='index')
+    if df.shape[0] > 0:
+        df = df.sort_values(by=df.columns[0], ascending=False)
+        df.index.name = 'cb'
+        column_name = list(df.columns.values)
+        column_name[0] = 'cb_count'
+        df.columns = column_name
+
+        df.to_csv(cb_count_file, sep='\t', mode='a', header=False)
+
+    return num_read_pass, num_read_barcode, num_read_polyt, num_read
 
 
 def _construct_barcode_regex(bam):
@@ -831,8 +907,8 @@ def _generate_barcode_whitelist_map(barcode, whitelist, min_distance=1):
 
     whitelist = set([str(x).encode('utf-8') for x in whitelist])
 
-    num_cpu = multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(num_cpu)
+    num_cpu = mp.cpu_count()
+    pool = mp.Pool(num_cpu)
 
     _partial_map_single_barcode_to_whitelist = \
         partial(_map_single_barcode_to_whitelist, whitelist=whitelist,
@@ -1060,8 +1136,10 @@ def _transform_write_sparse_matrix(molecular_info, num_gene,
 
     logger.info('Output results')
     write_time = time.time()
-    pd.Series(count_row_name).to_csv(base_name + '_gene.tsv', index=False)
-    pd.Series(count_column_name).to_csv(base_name + '_barcode.tsv', index=False)
+    pd.Series(count_row_name).to_csv(base_name + '_gene.tsv',
+                                     index=False, header=False)
+    pd.Series(count_column_name).to_csv(base_name + '_barcode.tsv',
+                                        index=False, header=False)
 
     if 'umi' == sum_type:
         with open(base_name + '.mtx', 'w+b') as out_handle:
@@ -1176,57 +1254,91 @@ def _generate_fake_count(row_of_df, feature, depth=1.5):
     return df
 
 
-def down_sample_total(molecular_info, total_read, expect_read,
-                      out_prefix, depth_threshold=1):
+def down_sample(molecular_info, total_read=None, total_cell=None, mean_read=None,
+                out_prefix='.', depth_threshold=1, seed=0):
     """
     Down-sampling the molecular_info such that each library has the same number of reads
 
     :param molecular_info: molecular_info: the input molecular info data frame
     :param total_read: the total number of reads for these libraries
-    :param expect_read: the expected number of reads after down-sampling
+    :param total_cell: the total number of cells
+    :param mean_read: the expected number of reads per cell after down-sampling
     :param out_prefix: the prefix of the output matrices
     :param depth_threshold: the coverage threshold to consider
+    :param seed used for random sampling
     """
 
     feature = pd.read_hdf(molecular_info, key='feature')
     output_molecular_info = pd.read_hdf(molecular_info, key='molecular_info')
+    for col in output_molecular_info.columns[:3]:
+        output_molecular_info.loc[:, col] = output_molecular_info[col].astype('category')
 
     output_molecular_info = output_molecular_info.loc[
                             output_molecular_info['depth'] >= 1, :]
+    output_molecular_info.reset_index(drop=True, inplace=True)
 
-    cell_vec = output_molecular_info['depth']
+    map_info = pd.read_hdf(molecular_info, key='map_info')
+    if total_read is None:
+        total_read = map_info['num_unique_read']
+    else:
+        total_read = max(total_read, map_info['num_unique_read'])
+
+    read_in_cell = pd.read_hdf(molecular_info, key='read_in_cell')
+    if total_cell is None:
+        total_cell = read_in_cell.shape[0]
+    else:
+        total_cell = min(total_cell, read_in_cell.shape[0])
+
+    if mean_read is None:
+        mean_read = [10000]
+
+    cell_vec = output_molecular_info['depth'].copy()
+    for mean_read_i in mean_read:
+        random.seed(seed)
+        seed += 1
+
+        _down_sample(output_molecular_info, feature, total_read, total_cell,
+                     mean_read_i, out_prefix, depth_threshold=depth_threshold)
+        output_molecular_info['depth'] = cell_vec
+
+
+def _down_sample(molecular_info, feature, total_read, total_cell, mean_read,
+                 out_prefix, depth_threshold=1):
+    expect_read = mean_read * total_cell
+    if expect_read > total_read:
+        return ()
+
+    cell_vec = molecular_info['depth']
     value = cell_vec.tolist()
     id_end = np.cumsum(value)
     id_start = np.append(0, id_end)
     id_start = id_start[:-1]
 
     read_num_subsample = (id_end[-1] / total_read * 1.0) * expect_read
-    read_num_subsample = int(read_num_subsample)
+    read_num_subsample = int(read_num_subsample + 0.5)
 
     id_keep = sorted(random.sample(range(id_end[-1]), read_num_subsample))
-    expanded_count = np.zeros(id_end[-1])
+    expanded_count = np.zeros(id_end[-1], dtype=np.int32)
     expanded_count[id_keep] = 1
 
-    depth_col = output_molecular_info.shape[1] - 1
-
-    for i in np.arange(len(id_end)):
-        value[i] = np.sum(expanded_count[id_start[i]:id_end[i]])
-
-    output_molecular_info.iloc[:, depth_col] = value
+    value = _add_umis(expanded_count, id_start, id_end)
+    molecular_info['depth'] = value
+    output_molecular_info = molecular_info.loc[molecular_info['depth'] >= 1, :].copy()
+    output_molecular_info.reset_index(drop=True, inplace=True)
 
     logger.info('Collapsing UMIs')
     write_time = time.time()
     output_molecular_info = _collapse_umi(output_molecular_info)
     write_time = time.time() - write_time
-    logger.info(f'Collapsing UMIs done, taking {write_time/60.0:.3f} minutes')
+    logger.info(f'Collapsing UMIs done, taking {write_time / 60.0:.3f} minutes')
 
-    out_prefix = out_prefix + '_sample_' + str(read_num_subsample)
+    out_prefix = out_prefix + '_sample_' + str(mean_read)
     _calculate_cell_gene_matrix(output_molecular_info, feature,
                                 out_prefix=out_prefix,
                                 depth_threshold=depth_threshold)
 
 
-def down_sample(molecular_info, expect_read, out_prefix, depth_threshold=1):
+def down_sample_cell(molecular_info, expect_read, out_prefix, depth_threshold=1):
     """
     Down-sampling the molecular_info such that each cell has the same number of reads
 
@@ -1251,12 +1363,12 @@ def down_sample(molecular_info, expect_read, out_prefix, depth_threshold=1):
     read_in_cell = pd.read_hdf(molecular_info, key='read_in_cell')
 
     for num_read in expect_read:
-        _down_sample(output_molecular_info, feature, read_in_cell, num_read,
-                     out_prefix, depth_threshold=depth_threshold)
+        _down_sample_cell(output_molecular_info, feature, read_in_cell, num_read,
+                          out_prefix, depth_threshold=depth_threshold)
 
 
-def _down_sample(molecular_info, feature, read_in_cell, expect_read,
-                 out_prefix, depth_threshold=1):
+def _down_sample_cell(molecular_info, feature, read_in_cell, expect_read,
+                      out_prefix, depth_threshold=1):
 
     read_in_cell = read_in_cell[read_in_cell[0] >= expect_read]
 
@@ -1269,6 +1381,7 @@ def _down_sample(molecular_info, feature, read_in_cell, expect_read,
     output_molecular_info = molecular_info.loc[
         molecular_info['cell'].isin(cell)].copy()
 
+    # Update the values of output_molecular_info
     output_molecular_info.reset_index(drop=True, inplace=True)
 
     cell_start = output_molecular_info.drop_duplicates('cell')
@@ -1282,7 +1395,7 @@ def _down_sample(molecular_info, feature, read_in_cell, expect_read,
 
     umi_count = output_molecular_info['depth'].as_matrix()
     umi_count = umi_count.reshape([umi_count.shape[0], 1])
-    np.random.seed(0)
+    random.seed(0)
 
     for idx_i, cell_i in enumerate(cell):
         logger.info(f'Subsample cell {idx_i:,d}')
@@ -1426,10 +1539,11 @@ def annotate_bam(bam, gtf, featureCounts='featureCounts',
 
         subprocess.check_output(cmd, shell=True)
     except subprocess.CalledProcessError:
-        print(f'Running featureCount errors')
+        logger.info(f'Running featureCount errors')
         sys.exit(-1)
     except OSError:
-        print(f'featureCounts not found or cannot run! Please specify which featureCounts to use.')
+        logger.info(f'featureCounts not found or cannot run!'
+                    f' Please specify which featureCounts to use.')
         sys.exit(-1)
 
     if annotate_intron:
@@ -1444,12 +1558,13 @@ def annotate_bam(bam, gtf, featureCounts='featureCounts',
                             bam + '.featureCounts.bam'])
             subprocess.check_output(cmd, shell=True)
         except subprocess.CalledProcessError:
-            print(f'Running featureCount errors')
+            logger.info(f'Running featureCount errors')
             sys.exit(-1)
         except OSError:
-            print(f'featureCounts not found or cannot run! Please specify which featureCounts to use.')
+            logger.info(f'featureCounts not found or cannot run! ' 
+                        f'Please specify which featureCounts to use.')
             sys.exit(-1)
 
     feature_count_time = time.time() - start_time
-    print(f'Annotating features done successfully, '
-          f'taking {feature_count_time/60.0:.3f} minutes')
+    logger.info(f'Annotating features done successfully, '
+                f'taking {feature_count_time/60.0:.3f} minutes')
