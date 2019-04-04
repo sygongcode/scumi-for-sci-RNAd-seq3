@@ -4,7 +4,7 @@
 # Author : Jiarui Ding <jiarui.ding@gmail.com>
 
 import argparse
-from scumi.run import merge_fastq, count_umi, tag_bam
+from scumi.run import merge_fastq, count_umi, tag_bam, down_sample
 
 
 parser = argparse.ArgumentParser(prog='scumi')
@@ -159,6 +159,54 @@ count_parser.add_argument('--cell_barcode_whitelist',
                           help='''A file contains a whitelist of cell barcodes''')
 
 count_parser.set_defaults(func=count_umi)
+
+
+# Down-sampling
+sample_parser = subparsers.add_parser('down_sample',
+                                      parents=[analysis_parser],
+                                      help='''Count the number of reads/UMIs mapped to each gene''')
+
+sample_parser.add_argument('molecular_info',
+                           help='''The detailed molecular info matrix output from running count_umi''')
+
+sample_parser.add_argument('--total_read',
+                           required=False,
+                           type=int,
+                           help='''The total number of reads in the fastq files in 
+                           generating the molecular_info matrix''')
+
+sample_parser.add_argument('--out_prefix',
+                           required=True,
+                           help='''The file prefix for output files after down-sampling''')
+
+sample_parser.add_argument('--total_cell',
+                           required=False,
+                           type=int,
+                           help='''The total number of cells detected. 
+                           The default value is the number of cells in the molecular_info matrix''')
+
+sample_parser.add_argument('--mean_read',
+                           required=False,
+                           nargs="+",
+                           type=int,
+                           default=None,
+                           help='''The expected number of reads per cell after down-sampling 
+                           (total number of reads divided by the total number of cells)''')
+
+sample_parser.add_argument('--depth_threshold',
+                           required=False,
+                           type=int,
+                           default=1,
+                           help='''Only considering UMIs that have at least depth_threshold reads support''')
+
+sample_parser.add_argument('--seed',
+                           required=False,
+                           type=int,
+                           default=0,
+                           help='''The random seed used by sampling to generate the same results from different runs''')
+
+
+sample_parser.set_defaults(func=down_sample)
 
 
 args = parser.parse_args()

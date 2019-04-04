@@ -1,4 +1,4 @@
-from .scumi import format_fastq, count_feature, annotate_bam
+from . import scumi
 
 
 def merge_fastq(args):
@@ -9,8 +9,8 @@ def merge_fastq(args):
     cb_count = args.cell_barcode_count
     num_thread = args.num_thread
 
-    format_fastq(*fastq, config=config, method=method, fastq_out=fastq_out,
-                 cb_count=cb_count, num_thread=num_thread)
+    scumi.format_fastq(*fastq, config=config, method=method, fastq_out=fastq_out,
+                       cb_count=cb_count, num_thread=num_thread)
 
 
 def tag_bam(args):
@@ -23,10 +23,10 @@ def tag_bam(args):
     num_thread = args.num_thread
     featureCounts = args.featureCounts
 
-    annotate_bam(bam, gtf=gtf, featureCounts=featureCounts,
-                 annotate_multi_mapping=annotate_multi_mapping,
-                 strand=strand, annotate_intron=annotate_intron,
-                 num_thread=num_thread)
+    scumi.annotate_bam(bam, gtf=gtf, featureCounts=featureCounts,
+                       annotate_multi_mapping=annotate_multi_mapping,
+                       strand=strand, annotate_intron=annotate_intron,
+                       num_thread=num_thread)
 
 
 def count_umi(args):
@@ -41,7 +41,24 @@ def count_umi(args):
     depth_threshold = args.depth_threshold
     cell_barcode_whitelist = args.cell_barcode_whitelist
 
-    count_feature(*cb, bam=bam, molecular_info_h5=molecular_info_h5, gtf=gtf,
-                  cb_count=cb_count, feature_tag=feature_tag, expect_cell=expect_cell,
-                  force_cell=force_cell, depth_threshold=depth_threshold,
-                  cell_barcode_whitelist=cell_barcode_whitelist)
+    scumi.count_feature(*cb, bam=bam, molecular_info_h5=molecular_info_h5, gtf=gtf,
+                        cb_count=cb_count, feature_tag=feature_tag, expect_cell=expect_cell,
+                        force_cell=force_cell, depth_threshold=depth_threshold,
+                        cell_barcode_whitelist=cell_barcode_whitelist)
+
+
+def down_sample(args):
+    molecular_info = args.molecular_info
+    total_read = args.total_read
+
+    total_cell = args.total_cell
+    mean_read = args.mean_read
+    out_prefix = args.out_prefix
+    depth_threshold = args.depth_threshold
+    seed = args.seed
+
+    scumi.down_sample(molecular_info, total_read=total_read,
+                      total_cell=total_cell,
+                      mean_read=mean_read, out_prefix=out_prefix,
+                      depth_threshold=depth_threshold,
+                      seed=seed)
