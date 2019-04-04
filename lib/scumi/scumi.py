@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import sys
 import os
 import numpy as np
@@ -540,18 +538,93 @@ def count_feature(*cb, bam, molecular_info_h5, gtf, cb_count, feature_tag='XT:Z'
     correct_cb_fun, cb_list, cb_remove = _construct_cb_filter(
         cb_count, cb, expect_cell, force_cell, all_cell, cell_barcode_whitelist)
 
-    map_info = collections.defaultdict(int)
-    read_in_cell = collections.Counter()
-    molecular_info = collections.defaultdict(int)
-
     gene_map_dict = read_gene_map_from_gtf(gtf)
-    search_undetermined = re.compile('N').search
 
     logger.info('Counting molecular info')
     time_start_count = time.time()
+
     sam_file = AlignmentFile(bam, mode=read_mode)
+    _count_feature_partial = partial(_count_feature,
+                                     gene_map_dict=gene_map_dict,
+                                     barcode_parser=barcode_parser,
+                                     correct_cb_fun=correct_cb_fun,
+                                     sam_file=sam_file,
+                                     feature_tag=feature_tag)
 
     track = sam_file.fetch(until_eof=True)
+    map_info, read_in_cell, molecular_info = _count_feature_partial(track)
+
+    time_count = time.time() - time_start_count
+    logger.info(f'Counting molecular info done - {time_count/3600.0:.3f} hours, '
+                f'{int(3600.0 * map_info["num_alignment"]/time_count):,d} '
+                f'alignments/hour\n')
+
+    # TODO: still output results
+    if len(molecular_info) == 0:
+        logger.error('Error: no reads mapped to features.')
+        sys.exit(-1)
+
+    name = ['cell',
+            'gene',
+            'umi',
+            'depth',
+            ]
+
+    logger.info('Converting to a dataframe')
+    convert_time = time.time()
+    molecular_info = pd.Series(molecular_info).reset_index()
+    molecular_info.columns = name
+
+    for col in name[:3]:
+        molecular_info.loc[:, col] = molecular_info[col].astype('category')
+
+    convert_time = time.time() - convert_time
+    logger.info(f'Converting to a dataframe done, '
+                f'taking {convert_time/60.0:.3f} minutes\n')
+
+    molecular_info.columns = name
+    if num_cb > 1 and cb_list:
+        molecular_info = molecular_info.loc[molecular_info['cell'].isin(cb_list), :]
+
+    if cb_remove:
+        molecular_info = molecular_info.loc[~molecular_info['cell'].isin(cb_remove), :]
+
+    molecular_info = molecular_info.loc[molecular_info['depth'] >= 0.95, :]
+    molecular_info['depth'] = \
+        np.floor(molecular_info['depth'].values + 0.5).astype('uint32')
+
+    molecular_info = molecular_info.sort_values(name[:3])
+    molecular_info = molecular_info.reset_index(drop=True)
+
+    map_info = pd.Series(map_info)
+    read_in_cell = pd.DataFrame.from_dict(read_in_cell, orient='index')
+
+    logger.info('Writing molecular info')
+    write_time = time.time()
+
+    feature = gene_map_dict.values()
+    feature = pd.Series(index=set(feature))
+    feature = feature.sort_index()
+
+    with pd.HDFStore(molecular_info_h5, mode='w') as hf:
+        hf.put('molecular_info', molecular_info, format='table', data_columns=True)
+        hf.put('map_info', map_info)
+        hf.put('feature', feature)
+        hf.put('read_in_cell', read_in_cell)
+    del molecular_info
+
+    write_time = time.time() - write_time
+    logger.info(f'Writings molecular info done, '
+                f'taking {write_time/60.0:.3f} minutes\n')
+
+    _convert_count_to_matrix(molecular_info_h5, molecular_info_h5,
+                             depth_threshold=depth_threshold)
+
+
+def _count_feature(track, gene_map_dict, barcode_parser,
+                   correct_cb_fun, sam_file, feature_tag='XT:Z'):
+    search_undetermined = re.compile('N').search
+
     read_name = None
     feature_tag_value_pre = None
     filt_multiple_gene_barcode = False
@@ -559,6 +632,11 @@ def count_feature(*cb, bam, molecular_info_h5, gtf, cb_count, feature_tag='XT:Z'
     cb_i = feature_tag_value = ub_i = None
     num_aln_read = 0
     pass_filter = False
+
+    map_info = collections.defaultdict(int)
+    read_in_cell = collections.Counter()
+    molecular_info = collections.defaultdict(int)
+
     for aln in track:
         if map_info['num_alignment'] and not map_info['num_alignment'] % 10000000:
             logger.info(f'Parsed {map_info["num_alignment"]:,d} alignments.')
@@ -678,71 +756,7 @@ def count_feature(*cb, bam, molecular_info_h5, gtf, cb_count, feature_tag='XT:Z'
         record_tuple = (cb_i, feature_tag_value, ub_i)
         molecular_info[record_tuple] += 1
 
-    time_count = time.time() - time_start_count
-    logger.info(f'Counting molecular info done - {time_count/3600.0:.3f} hours, '
-                f'{int(3600.0 * map_info["num_alignment"]/time_count):,d} '
-                f'alignments/hour\n')
-
-    # TODO: still output results
-    if len(molecular_info) == 0:
-        logger.error('Error: no reads mapped to features.')
-        sys.exit(-1)
-
-    name = ['cell',
-            'gene',
-            'umi',
-            'depth',
-            ]
-
-    logger.info('Converting to a dataframe')
-    convert_time = time.time()
-    molecular_info = pd.Series(molecular_info).reset_index()
-    molecular_info.columns = name
-
-    for col in name[:3]:
-        molecular_info.loc[:, col] = molecular_info[col].astype('category')
-
-    convert_time = time.time() - convert_time
-    logger.info(f'Converting to a dataframe done, '
-                f'taking {convert_time/60.0:.3f} minutes\n')
-
-    molecular_info.columns = name
-    if num_cb > 1 and cb_list:
-        molecular_info = molecular_info.loc[molecular_info['cell'].isin(cb_list), :]
-
-    if cb_remove:
-        molecular_info = molecular_info.loc[~molecular_info['cell'].isin(cb_remove), :]
-
-    molecular_info = molecular_info.loc[molecular_info['depth'] >= 0.95, :]
-    molecular_info['depth'] = \
-        np.floor(molecular_info['depth'].values + 0.5).astype('uint32')
-
-    molecular_info = molecular_info.sort_values(name[:3])
-    molecular_info = molecular_info.reset_index(drop=True)
-
-    map_info = pd.Series(map_info)
-    read_in_cell = pd.DataFrame.from_dict(read_in_cell, orient='index')
-
-    logger.info('Writing molecular info')
-    write_time = time.time()
-
-    feature = gene_map_dict.values()
-    feature = pd.Series(index=set(feature))
-    feature = feature.sort_index()
-
-    with pd.HDFStore(molecular_info_h5, mode='w') as hf:
-        hf.put('molecular_info', molecular_info, format='table', data_columns=True)
-        hf.put('map_info', map_info)
-        hf.put('feature', feature)
-        hf.put('read_in_cell', read_in_cell)
-    del molecular_info
-
-    write_time = time.time() - write_time
-    logger.info(f'Writings molecular info done, '
-                f'taking {write_time/60.0:.3f} minutes\n')
-
-    _convert_count_to_matrix(molecular_info_h5, molecular_info_h5,
-                             depth_threshold=depth_threshold)
+    return map_info, read_in_cell, molecular_info
 
 
 def _construct_cb_filter(cb_count, cb, expect_cell, force_cell,
