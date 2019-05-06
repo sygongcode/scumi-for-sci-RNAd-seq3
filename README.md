@@ -1,7 +1,7 @@
 ---
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 ![scumi](doc/scumi.png)
 
@@ -33,9 +33,7 @@ Here we used example data from sci-RNA-seq to show how to run scumi.
 The same pipeline can be used to analyze data from other protocols such 10x Chromium, Drop-seq, Seq-Well, CEL-Seq2, InDrop, and SPLiT-seq. 
 
 ```bash
-# The scumi package has been pre-installed in the conda environment scumi
-source /ahg/regevdata/projects/sc_compare/software/miniconda3/bin/activate scumi
-
+# pre-installed software
 star_dir=/ahg/regevdata/projects/sc_compare/software/STAR-2.6.1a/bin/Linux_x86_64/
 feature_count_dir=/ahg/regevdata/projects/sc_compare/software/subread-1.6.2-Linux-x86_64/bin/
 
@@ -48,6 +46,7 @@ fastq_dir=/ahg/regevdata/projects/sc_compare/hiseq-pbmc/SN0142147/fastq/rename
 fastq1=$fastq_dir/CC7W2ANXX.120717_SciSeq-p5_H6.unmapped.1.fastq.gz
 fastq2=$fastq_dir/CC7W2ANXX.120717_SciSeq-p5_H6.unmapped.2.fastq.gz
 
+# RT-barcode, the candidate cell barcodes
 sciRNAseq_RT_barcode=/ahg/regevdata/projects/sc_compare/doc/RT_384_080717.tsv
 
 # Some important intermediate output files
@@ -108,8 +107,8 @@ After demultiplexing, the sci-RNA-seq data have two reads.
 Read1 has 8bp UMI sequences followed by 10bp cell barcodes. 
 For the test data, there are poly-T sequences after the cell barcodes in read1. 
 scumi will look at the poly-T sequences from base 19 to base 23 (as specified in the following configration file), and will discard the reads with more than one non-T base. 
-If you do not want to filter reads based on the poly-T sequences, you can set the parameter `--method sci-RNA-seq` because.
-As can see from the below configuration file `/ahg/regevdata/projects/sc_compare/doc/config.yaml`, there are no poly-T entries in `sci-RNA-seq`. 
+If you do not want to filter reads based on the poly-T sequences, you can set the parameter `--method sci-RNA-seq` because, 
+as can see from the below configuration file `/ahg/regevdata/projects/sc_compare/doc/config.yaml`, there are no poly-T entries in `sci-RNA-seq`. 
 Read2 consists of the actual cDNA sequences. 
 ```bash
 sci-RNA-seq: {
@@ -201,5 +200,10 @@ For example, if we know cell barcode two can be either "CATAACTG" or "GGAGGTAA",
 
 
 ##
+
+We currently use [bpipe](https://github.com/ssadedin/bpipe) for pipeline management. 
+Using bpipe, we can easily build pipelines by connecting different modules (e.g., different steps of the scumi package) to form a pipeline.
+Moreover, when some jobs failed, there is no need to re-run the whole pipeline, but started at the steps where the jobs failed. 
+
 
 
