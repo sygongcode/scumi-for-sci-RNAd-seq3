@@ -195,8 +195,12 @@ InDrop-polyT: {
   }
 }
 ```
+It's convinent to down-sample the `molecular_info.h5` matrix output from `scumi count_umi`, using `scumi down_sample`.
+The down-sampled data can be used to draw saturation curves. 
+
 scumi has another useful feature to only extract the reads with given cell barcodes (with edit distances up to one). 
 For example, if we know cell barcode two can be either "CATAACTG" or "GGAGGTAA", we can set the value as in the above configuration file. 
+
 
 # Pipeline management
 
