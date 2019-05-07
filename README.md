@@ -30,13 +30,14 @@ We will simplify the installation using conda packaging.
 ## Running scumi
 
 Here we used example data from sci-RNA-seq to show how to run scumi. 
-The same pipeline can be used to analyze data from other protocols such 10x Chromium, Drop-seq, Seq-Well, CEL-Seq2, InDrop, and SPLiT-seq. 
+The same pipeline can be used to analyze data from other protocols such as 10x Chromium, Drop-seq, Seq-Well, CEL-Seq2, inDrops, and SPLiT-seq. 
 
 ```bash
-# pre-installed software
+# pre-installed software (STAR and featureCounts)
 star_dir=/ahg/regevdata/projects/sc_compare/software/STAR-2.6.1a/bin/Linux_x86_64/
 feature_count_dir=/ahg/regevdata/projects/sc_compare/software/subread-1.6.2-Linux-x86_64/bin/
 
+# STAR index files and the gtf file
 index_dir=/seq/regev_genome_portal/SOFTWARE/10X/refdata-cellranger-1.2.0/refdata-cellranger-GRCh38-1.2.0
 star_index=$index_dir/star
 gtf=$index_dir/genes/genes.gtf
@@ -148,6 +149,7 @@ We set parameters based on the ENCODE project, e.g., `--outFilterMultimapNmax 20
 scumi uses featureCounts to tag each alignment. 
 To tag multi-mapped reads, set `--annotate_multi_mapping`, 
 and to tag intron mapping reads, set `--annotate_intron`. 
+If multi-mapping reads were used, scumi will count a multi-mapping read if all its alignments only overlap a single gene, similar to the Cell Ranger pipeline. 
 
 
 ### Counting the number of UMIs in each cell (step four)
@@ -158,12 +160,13 @@ This feature is useful for some noisy data, e.g., the CEL-Seq2 data that could h
 The `--expect_cell` parameter specifies the expected number of cells in the input bam file,
 and the `--force_cell` parameter forces scumi to ouput the number of cells specified by `--expect_cell`. 
 If the set of cell barcode whitelists is known, scumi can only consider these cell barcodes by specifying `--cell_barcode_whitelist=$cell_barcode_whitelist`, 
-where `$cell_barcode_whitelist` is an one column text file with the whitelist of cell barcodes (without header).  
+where `$cell_barcode_whitelist` is an one-column text file with the whitelist of cell barcodes (without header). 
+We collapsed UMIs in reads from the same gene from the same cell based on a Hamming distance of one. To prevent over-collapsing UMIs, we did not collapse two UMIs – in the same gene in the same cell – if they each had more than five reads support.
 
 
-For many scRNA-seq protocols (e.g., sci-RNA-seq, 10x chromium, InDrop, and CEL-Seq2), the cell barcodes are drawn from a pool of known candidate cell barcodes.  For example, for the sci-RNA-seq data, the RT-barcodes (cell barcode one) are drawn from 384 candidate cell barcodes. 
+For many scRNA-seq protocols (e.g., sci-RNA-seq, 10x chromium, inDrops, and CEL-Seq2), the cell barcodes are drawn from a pool of known candidate cell barcodes.  For example, for the sci-RNA-seq data, the RT-barcodes (cell barcode one) are drawn from 384 candidate cell barcodes. 
 Therefore, we can map the observed cell barcodes to the candidate cell barcodes by putting the candidate cell barcodes in a file (`$sciRNAseq_RT_barcode` in our case) and use it as an input to `count_umi`. 
-For other protocols such as InDrop, as there are three cell barcodes for each fragment (two cell barcodes plus a sample barcode), 
+For other protocols such as inDrops, as there are three cell barcodes for each fragment (two cell barcodes plus a sample barcode), 
 we can put the corresponding cell barcodes in three files (without headers) and use these three files as inputs to `count_umi`. 
 
 If for some reasons, the candidate cell barcodes for one cell barcode are unknown, you can use `None` as input. For example, assuming that `CB2` is unknown, we can use `$cell_barcode_file_one None $cell_barcode_three` as inputs, where `$cell_barcode_file_one` and `$cell_barcode_file_three` are the candidate cell barcode files for cell barcode one and cell barcode three, respectively.  
@@ -203,7 +206,7 @@ For example, if we know cell barcode two can be either "CATAACTG" or "GGAGGTAA",
 
 We currently use [bpipe](https://github.com/ssadedin/bpipe) for pipeline management. 
 Using bpipe, we can easily build pipelines by connecting different modules (e.g., different steps of the scumi package) to form a pipeline.
-Moreover, when some jobs failed, there is no need to re-run the whole pipeline, but started at the steps where the jobs failed. 
+Moreover, when some jobs failed, there is no need to re-run the whole pipeline, but restarted from the steps where the jobs failed. 
 
 
 
