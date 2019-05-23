@@ -1,0 +1,13 @@
+Notice of Third Party Code Dependencies.
+
+scumi utilizes the following third party software in some capacity (without modification or redistribution). Each component is governed by its own license and respective copyright: 
+
+Python3.x, Copyright (c) 2001 – 2019 Python Software Foundation. All Rights Reserved. (https://docs.python.org/3/license.html#terms-and-conditions-for-accessing-or-otherwise-using-python); 
+
+STAR, Copyright (c) 2009 - 2015 Alexander Dobin. All Rights Reserved. (https://github.com/alexdobin/STAR/blob/master/LICENSE); 
+
+[STAR aligner also is available via conda, Copyright (c) 2012 Anaconda, Inc. All Rights Reserved.
+(https://github.com/conda/conda/blob/master/LICENSE.txt)]; and
+
+featureCounts, Copyright (c) 2013 - 2019 Wei Shi, Yang Liao and The Walter and Eliza Hall Institute of Medical Research. All Rights Reserved. 
+(http://subread.sourceforge.net/).
