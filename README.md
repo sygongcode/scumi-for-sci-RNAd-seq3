@@ -13,24 +13,25 @@ scumi is a flexible Python package to process fastq files generated from differe
 
 
 ## Installation 
-scumi has been tested on Python 3.6 on both Linux (Linux version 2.6.32-696.30.1.el6.x86_64) and macOS Sierra (Version 10.12.6). 
+scumi has been tested on Python 3.6 on both Linux (Red Hat Enterprise Linux Server release 7.5 (Maipo)) and macOS (Sierra Version 10.12.6, High Sierra Version 10.13.6). 
 
 Dependencies
 
 * Python 3.6 or above 
-* [The STAR aligner](https://github.com/alexdobin/STAR)
+* [The STAR aligner](https://github.com/alexdobin/STAR), version 2.6.1a or above
 * The STAR index file. We use one from [10x Genomics](https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest)
 * A gene transfer format (GTF) file. We use one from [10x Genomics](https://support.10xgenomics.com/single-cell-gene-expression/software/downloads/latest)
-* The [Subread package](http://subread.sourceforge.net/), version 1.6.2 or above
+* The [Subread package](http://subread.sourceforge.net/) (featureCounts), version 1.6.2 or above
 
-scumi can be installed using `python setup.py install`. 
+scumi can be installed using `python setup.py install` (about a minute). 
 We will simplify the installation using conda packaging.
 
 
 ## Running scumi
 
 Here we used example data from sci-RNA-seq to show how to run scumi. 
-The same pipeline can be used to analyze data from other protocols such as 10x Chromium, Drop-seq, Seq-Well, CEL-Seq2, inDrops, and SPLiT-seq. 
+Each step should take less than one minute. 
+The same pipeline can be used to analyze data from other protocols such as CEL-Seq2, 10x Chromium, Drop-seq, Seq-Well, CEL-Seq2, inDrops, and SPLiT-seq. 
 
 ```bash
 # pre-installed software (STAR and featureCounts)
@@ -42,13 +43,17 @@ index_dir=/seq/regev_genome_portal/SOFTWARE/10X/refdata-cellranger-1.2.0/refdata
 star_index=$index_dir/star
 gtf=$index_dir/genes/genes.gtf
 
+# config file
+scumi_dir=/ahg/regevdata/projects/sc_compare/scumi-dev
+config=$scumi_dir/lib/scumi/config.yaml
+
 # The input fastq data
-fastq_dir=/ahg/regevdata/projects/sc_compare/hiseq-pbmc/SN0142147/fastq/rename
+fastq_dir=$scumi_dir/data/example
 fastq1=$fastq_dir/CC7W2ANXX.120717_SciSeq-p5_H6.unmapped.1.fastq.gz
 fastq2=$fastq_dir/CC7W2ANXX.120717_SciSeq-p5_H6.unmapped.2.fastq.gz
 
 # RT-barcode, the candidate cell barcodes
-sciRNAseq_RT_barcode=/ahg/regevdata/projects/sc_compare/doc/RT_384_080717.tsv
+sciRNAseq_RT_barcode=$scumi_dir/data/cell_barcode/sciRNAseq/RT_384_080717.tsv
 
 # Some important intermediate output files
 fastq_out=CC7W2ANXX.120717_SciSeq-p5_H6.unmapped.1.fastq.format_fastq.fastq.gz
@@ -60,6 +65,9 @@ molecular_info_h5=$bam".featureCounts.count_feature.h5"
 
 # Step one: Extract cell barcodes and unified molecular identifiers (UMIs) and 
 # put them to the header of the cDNA read
+# 
+# output: $fastq_out and $cell_barcode_count
+# 
 scumi merge_fastq $fastq1 $fastq2 \
   --config /ahg/regevdata/projects/sc_compare/doc/config.yaml  \
   --method sci-RNA-seq-polyT  \
@@ -69,6 +77,9 @@ scumi merge_fastq $fastq1 $fastq2 \
   
 
 # Step two: Align the merged fastq file to the corresponding genome using STAR
+# 
+# output: $bam
+# 
 $star_dir/STAR \
   --genomeDir $star_index \
   --chimOutType WithinBAM \
@@ -87,6 +98,9 @@ $star_dir/STAR \
 
 
 # Step three: Using featureCounts to annotate each alignment with a gene tag, XT:Z
+# 
+# output: $bam".featureCounts.bam"
+# 
 scumi tag_bam $bam \
   --gtf $gtf  \
   --featureCounts $feature_count_dir"/featureCounts" \
@@ -94,6 +108,15 @@ scumi tag_bam $bam \
 
 
 # Step four: Counting the number of UMIs per gene per cell 
+# 
+# output: $molecular_info_h5
+#   $molecular_info_h5"_depth_1_transcript.mtx"
+#   $molecular_info_h5"_depth_1_transcript_gene.tsv"
+#   $molecular_info_h5"_depth_1_transcript_barcode.tsv"
+#   $molecular_info_h5"_read.mtx"
+#   $molecular_info_h5"_read_gene.tsv"
+#   $molecular_info_h5"_read_barcode.tsv"
+# 
 scumi count_umi \
   --bam $bam".featureCounts.bam" \
   --molecular_info_h5  $molecular_info_h5 \
@@ -109,7 +132,7 @@ Read1 has 8bp UMI sequences followed by 10bp cell barcodes.
 For the test data, there are poly-T sequences after the cell barcodes in read1. 
 scumi will look at the poly-T sequences from base 19 to base 23 (as specified in the following configration file), and will discard the reads with more than one non-T base. 
 If you do not want to filter reads based on the poly-T sequences, you can set the parameter `--method sci-RNA-seq` because, 
-as can see from the below configuration file `/ahg/regevdata/projects/sc_compare/doc/config.yaml`, there are no poly-T entries in `sci-RNA-seq`. 
+as can see from the below configuration file `scumi-dev/lib/scumi/config.yaml`, there are no poly-T entries in `sci-RNA-seq`. 
 Read2 consists of the actual cDNA sequences. 
 ```bash
 sci-RNA-seq: {
@@ -168,6 +191,8 @@ For many scRNA-seq protocols (e.g., sci-RNA-seq, 10x chromium, inDrops, and CEL-
 Therefore, we can map the observed cell barcodes to the candidate cell barcodes by putting the candidate cell barcodes in a file (`$sciRNAseq_RT_barcode` in our case) and use it as an input to `count_umi`. 
 For other protocols such as inDrops, as there are three cell barcodes for each fragment (two cell barcodes plus a sample barcode), 
 we can put the corresponding cell barcodes in three files (without headers) and use these three files as inputs to `count_umi`. 
+The 10x Chromium candidate cell barcodes (both v2 and v3) can be downloaded from the Cell Ranger software suite. 
+For sci-RNA-seq, inDrops, and CEL-Seq2, their candidate cell barcodes (used in our study [https://www.biorxiv.org/content/10.1101/632216v2](https://www.biorxiv.org/content/10.1101/632216v2)) can be found in the `data\cell_barcode` folder. 
 
 If for some reasons, the candidate cell barcodes for one cell barcode are unknown, you can use `None` as input. For example, assuming that `CB2` is unknown, we can use `$cell_barcode_file_one None $cell_barcode_three` as inputs, where `$cell_barcode_file_one` and `$cell_barcode_file_three` are the candidate cell barcode files for cell barcode one and cell barcode three, respectively.  
 
