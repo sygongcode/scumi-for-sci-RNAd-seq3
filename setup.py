@@ -18,7 +18,7 @@ setup(name='scumi',
           'cytoolz >= 0.8.2',
           'pyyaml >= 3.12',
           'regex >= 2.4.127',
-          'pytables >= 3.5.1',
+          'tables >= 3.4.4',
           'pandas >= 0.21.1',
           'pysam >= 0.11.2.2',
           'matplotlib > 2.0.2'

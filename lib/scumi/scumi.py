@@ -1304,7 +1304,9 @@ def down_sample(molecular_info, total_read=None, total_cell=None, mean_read=None
         total_cell = min(total_cell, read_in_cell.shape[0])
 
     if mean_read is None:
-        mean_read = [10000]
+        mean_read = (10000, )
+    elif not isinstance(mean_read, tuple):
+        mean_read = (mean_read, )
 
     cell_vec = output_molecular_info['depth'].copy()
     for mean_read_i in mean_read:
@@ -1352,7 +1354,7 @@ def _down_sample(molecular_info, feature, total_read, total_cell, mean_read,
                                 depth_threshold=depth_threshold)
 
 
-def down_sample_cell(molecular_info, expect_read, out_prefix, depth_threshold=1):
+def down_sample_cell(molecular_info, expect_read=None, out_prefix='', depth_threshold=1):
     """
     Down-sampling the molecular_info such that each cell has the same number of reads
 
@@ -1376,6 +1378,10 @@ def down_sample_cell(molecular_info, expect_read, out_prefix, depth_threshold=1)
 
     read_in_cell = pd.read_hdf(molecular_info, key='read_in_cell')
 
+    if expect_read is None:
+        expect_read = (10000, )
+    elif not isinstance(expect_read, tuple):
+        expect_read = (expect_read, )
     for num_read in expect_read:
         _down_sample_cell(output_molecular_info, feature, read_in_cell, num_read,
                           out_prefix, depth_threshold=depth_threshold)
