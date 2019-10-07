@@ -768,7 +768,7 @@ def _construct_cb_filter(cb_count, cb, expect_cell, force_cell,
     else:
         if cell_barcode_whitelist:
             with open(cell_barcode_whitelist, 'r') as file_handle:
-                cb_list = [line.rstrip('\n') for line in file_handle]
+                cb_list = [line.strip('\n') for line in file_handle]
         else:
             cb_list, cb_remove = _get_candidate_barcode(cb_count, cb,
                                                         expect_cell=expect_cell,
