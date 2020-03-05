@@ -1246,10 +1246,13 @@ def _collapse_umi(x, min_distance=1):
 
 
 def _convert_to_coo(data_series):
-    data_sp = data_series.to_sparse()
-
-    data_sp, row_name, column_name = data_sp.to_coo(column_levels=['cell'],
-                                                    row_levels=['gene'])
+    data_sp = data_series.astype('Sparse')
+    
+    data_sp, row_name, column_name = data_sp.sparse.to_coo(
+        column_levels=['cell'],
+        row_levels=['gene']
+    )
+    
     coo_tuple = collections.namedtuple('coo_tuple', ['x', 'row_name', 'column_name'])
 
     return coo_tuple(data_sp, row_name, column_name)
