@@ -768,7 +768,7 @@ def _construct_cb_filter(cb_count, cb, expect_cell, force_cell,
     else:
         if cell_barcode_whitelist:
             with open(cell_barcode_whitelist, 'r') as file_handle:
-                cb_list = [line.rstrip('\n') for line in file_handle]
+                cb_list = [line.strip('\n') for line in file_handle]
         else:
             cb_list, cb_remove = _get_candidate_barcode(cb_count, cb,
                                                         expect_cell=expect_cell,
@@ -1246,10 +1246,13 @@ def _collapse_umi(x, min_distance=1):
 
 
 def _convert_to_coo(data_series):
-    data_sp = data_series.to_sparse()
-
-    data_sp, row_name, column_name = data_sp.to_coo(column_levels=['cell'],
-                                                    row_levels=['gene'])
+    data_sp = data_series.astype('Sparse')
+    
+    data_sp, row_name, column_name = data_sp.sparse.to_coo(
+        column_levels=['cell'],
+        row_levels=['gene']
+    )
+    
     coo_tuple = collections.namedtuple('coo_tuple', ['x', 'row_name', 'column_name'])
 
     return coo_tuple(data_sp, row_name, column_name)
