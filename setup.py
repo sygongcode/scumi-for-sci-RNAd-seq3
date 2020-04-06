@@ -19,7 +19,7 @@ setup(name='scumi',
           'pyyaml >= 3.12',
           'regex >= 2.4.127',
           'tables >= 3.4.4',
-          'pandas >= 0.21.1',
+          'pandas >= 1.0.1',
           'pysam >= 0.11.2.2',
           'matplotlib > 2.0.2'
       ]

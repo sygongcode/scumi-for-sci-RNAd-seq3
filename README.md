@@ -220,8 +220,17 @@ InDrop-polyT: {
   }
 }
 ```
-It's convinent to down-sample the `molecular_info.h5` matrix output from `scumi count_umi`, using `scumi down_sample`.
+It's convenient to down-sample the `molecular_info.h5` matrix output from `scumi count_umi`, using `scumi down_sample`.
+Given the total number of reads and the total number of cells, we can down-sample the molecular info matrix such that the average number of reads per cell equals a given number (e.g., the average number of reads per cell at 5 and 6 for the example below). 
 The down-sampled data can be used to draw saturation curves. 
+```bash
+scumi down_sample $molecular_info_h5  \
+  --out_prefix $molecular_info_h5."down_sample."  \
+  --depth_threshold 1  \
+  --total_read 97459  \
+  --total_cell 26 \
+  --mean_read 5 6
+```
 
 scumi has another useful feature to only extract the reads with given cell barcodes (with edit distances up to one). 
 For example, if we know cell barcode two can be either "CATAACTG" or "GGAGGTAA", we can set the value as in the above configuration file. 
