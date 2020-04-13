@@ -14,13 +14,15 @@ scumi is a flexible Python package to process fastq files generated from differe
 ## Publication and data
 Ding, J., Adiconis, X., Simmons, S. K., Kowalczyk, M. S., Hession, C. C., Marjanovic, N. D., … & Regev, A., Levin, J.Z.† (2020). Nat Biotechnol (2020). https://doi.org/10.1038/s41587-020-0465-8
 
-Processed data by scumi can be downloaded from single cell portal:\
-https://singlecell.broadinstitute.org/single_cell/study/SCP424 \
-https://singlecell.broadinstitute.org/single_cell/study/SCP425 \
-https://singlecell.broadinstitute.org/single_cell/study/SCP426
+Processed data by scumi can be downloaded from single cell portal
 
-and Gene Expression Omnibus: \
-https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE132044
+* https://singlecell.broadinstitute.org/single_cell/study/SCP424 
+* https://singlecell.broadinstitute.org/single_cell/study/SCP425 
+* https://singlecell.broadinstitute.org/single_cell/study/SCP426
+
+and Gene Expression Omnibus (with FASTQ files)
+
+* https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE132044
 
 
 ## Installation 
