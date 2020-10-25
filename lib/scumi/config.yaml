@@ -165,8 +165,9 @@ sci-RNA-seq: {
     num_read: 2,
 
     read1: {
-      UMI: [1, 8],
-      CB1: [9, 18]
+      CB1: [1, 10]
+      UMI: [17, 24],
+      CB2: [25, 34]
     },
 
     read2: {
