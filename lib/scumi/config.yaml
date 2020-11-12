@@ -180,9 +180,10 @@ sci-RNA-seq-polyT: {
     num_read: 2,
 
     read1: {
-      UMI: [1, 8],
-      CB1: [9, 18],
-      polyT: [19, 23]
+      UMI: [1, 10],
+      CB1: [17, 24],
+      CB2: [25, 34]
+      polyT: [35, 39]
     },
 
     read2: {
