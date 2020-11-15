@@ -53,7 +53,7 @@ def format_fastq(*fastq, config, method, fastq_out, cb_count,
     """
 
     with open(config, 'r') as stream:
-        config_dict = yaml.load(stream)
+        config_dict = yaml.safe_load(stream)
 
     config_dict = config_dict[method]
     num_read = config_dict['num_read']

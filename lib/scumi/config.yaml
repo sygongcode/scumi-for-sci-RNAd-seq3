@@ -165,7 +165,7 @@ sci-RNA-seq: {
     num_read: 2,
 
     read1: {
-      CB1: [1, 10]
+      CB1: [1, 10],
       UMI: [17, 24],
       CB2: [25, 34]
     },
@@ -182,7 +182,7 @@ sci-RNA-seq-polyT: {
     read1: {
       UMI: [1, 10],
       CB1: [17, 24],
-      CB2: [25, 34]
+      CB2: [25, 34],
       polyT: [35, 39]
     },
 
